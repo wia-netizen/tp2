@@ -63,5 +63,16 @@ public class Commande {
 	@NonNull
     @ToString.Exclude
 	private Client client;
+    private boolean envoyeeLe;
 
+    public boolean getEnvoyeeLe() {
+        return envoyeeLe;
+    }
+
+    public void setEnvoyeeLe(boolean envoyeeLe) {
+        this.envoyeeLe = envoyeeLe;
+    }
+    public boolean isEnvoyee() {
+        return false;  // Si la date est non-nulle, la commande est envoyée
+    }
 }

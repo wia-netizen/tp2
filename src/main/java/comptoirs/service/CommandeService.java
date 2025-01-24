@@ -2,7 +2,9 @@ package comptoirs.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.NoSuchElementException;
 
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -93,7 +95,7 @@ public class CommandeService {
      * @param produitRef  la clé du produit
      * @param quantite    la quantité commandée (positive)
      * @return la ligne de commande créée
-     * @throws java.util.NoSuchElementException                si la commande ou le
+     * @throws NoSuchElementException                si la commande ou le
      *                                                         produit n'existe pas
      * @throws IllegalStateException                           si il n'y a pas assez
      *                                                         de stock, si la
@@ -101,14 +103,42 @@ public class CommandeService {
      *                                                         envoyée, ou si le
      *                                                         produit est
      *                                                         indisponible
-     * @throws jakarta.validation.ConstraintViolationException si la quantité n'est
+     * @throws ConstraintViolationException si la quantité n'est
      *                                                         pas positive
      */
     @Transactional
     public Ligne ajouterLigne(int commandeNum, int produitRef, @Positive int quantite) {
-        // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
-    }
+
+        // Trouver la commande
+        var commande = commandeDao.findById(commandeNum).orElseThrow(() -> new NoSuchElementException("Commande non trouvée"));
+
+        // Vérifier si la commande a déjà été envoyée
+        boolean b = false;
+        if (commande.getEnvoyeeLe() ) {
+            throw new IllegalStateException("Commande déjà envoyée");
+        }
+
+        // Trouver le produit
+        var produit = produitDao.findById(produitRef).orElseThrow(() -> new NoSuchElementException("Produit non trouvé"));
+
+        // Vérifier la disponibilité du stock : on récupère la quantité commandée pour ce produit
+        int quantiteEnCommande = ligneDao.getQuantiteCommandeePourProduit(produitRef);
+        int stockDisponible = produit.getUnitesEnStock() - quantiteEnCommande;
+
+        if (stockDisponible < quantite) {
+            throw new IllegalStateException("Stock insuffisant");
+        }
+
+        // Créer et enregistrer la ligne de commande
+        var ligne = new Ligne(commande, produit, quantite);
+        ligneDao.save(ligne);
+
+        // Mettre à jour la quantité en commande du produit
+        produit.setUnitesCommandees(produit.getUnitesCommandees() + quantite);
+        produitDao.save(produit);
+
+        return ligne;
+
 
     /**
      * Service métier : Enregistre l'expédition d'une commande connue par sa clé
@@ -129,8 +159,32 @@ public class CommandeService {
      * @throws IllegalStateException            si la commande a déjà été envoyée
      */
     @Transactional
-    public Commande enregistreExpedition(int commandeNum) {
-        // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+    public Commande enregistreExpedition( int commandeNum ) {
+        // Trouver la commande
+        var commande = commandeDao.findById(commandeNum).orElseThrow(() -> new NoSuchElementException("Commande non trouvée"));
+
+        // Vérifier si la commande a déjà été envoyée
+        if (commande.getEnvoyeeLe() != null) {
+            throw new IllegalStateException("Commande déjà envoyée");
+        }
+
+        // Marquer la commande comme envoyée
+        commande.setEnvoyeeLe(LocalDate.now());
+
+        // Mettre à jour les produits dans la commande
+        for (Ligne ligne : commande.getLignes()) {
+            var produit = ligne.getProduit();
+
+            // Ajuster les quantités en stock et en commande
+            produit.setUnitesEnStock(produit.getUnitesEnStock() - ligne.getQuantite());
+            produit.setUnitesCommandees(produit.getUnitesCommandees() - ligne.getQuantite());
+            produitDao.save(produit);
+        }
+
+        // Sauvegarder la commande
+        commandeDao.save(commande);
+
+        return commande;
     }
+
 }
